@@ -1,7 +1,8 @@
 """
-批量图片文件重命名工具 v3.2
-- 重新命名模式下强制自动编号，防止重名覆盖
-- 保留原文件名模式下编号可选
+批量图片文件重命名工具 v3.3
+- 修复拖放单张图片时添加0个文件的问题（使用 splitlist 正确解析路径）
+- 重新命名模式下强制自动编号，防止重名
+- 默认浅色主题
 """
 
 import os
@@ -19,7 +20,7 @@ except ImportError:
 class BatchRenameApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("批量图片重命名工具_by_muxia0396")
+        self.root.title("批量图片重命名工具 By muxia0396")
         self.root.geometry("1100x700")
         self.root.minsize(900, 500)
 
@@ -30,12 +31,12 @@ class BatchRenameApp:
         self.use_prefix = tk.BooleanVar(value=True)
         self.use_numbering = tk.BooleanVar(value=True)
         self.rename_mode = tk.StringVar(value="保留原文件名")
-        self._prev_use_numbering = True   # 记录切换前的编号状态
+        self._prev_use_numbering = True
 
         self.fix_combobox_blue()
         self.setup_ui()
 
-        # 必须放在 UI 构建之后，因为需要引用 self.numbering_check
+        # 模式切换绑定
         self.mode_combo.bind("<<ComboboxSelected>>", self.on_mode_change)
 
         if DRAG_DROP_SUPPORT:
@@ -59,7 +60,7 @@ class BatchRenameApp:
         toolbar.pack(fill="x", padx=5, pady=5)
 
         ttk.Button(toolbar, text="📁 选择文件夹", command=self.select_folder).pack(side="left", padx=2)
-        ttk.Button(toolbar, text="➕ 添加文件", command=self.add_files).pack(side="left", padx=2)
+        ttk.Button(toolbar, text="➕ 添加图片", command=self.add_files).pack(side="left", padx=2)
         ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=10, pady=2)
 
         # 模式
@@ -85,7 +86,7 @@ class BatchRenameApp:
         self.prefix_entry.pack(side="left", padx=2)
         self.prefix_var.trace_add("write", lambda *a: self.preview_rename())
 
-        # 编号（复选框需要保存引用）
+        # 编号
         number_frame = ttk.Frame(toolbar)
         number_frame.pack(side="left", padx=(15, 2))
         self.numbering_check = ttk.Checkbutton(number_frame, text="自动编号", variable=self.use_numbering,
@@ -111,7 +112,7 @@ class BatchRenameApp:
 
         list_toolbar = ttk.Frame(left_frame)
         list_toolbar.pack(fill="x", pady=(0, 5))
-        ttk.Label(list_toolbar, text="文件列表", font=("Segoe UI", 10, "bold")).pack(side="left")
+        ttk.Label(list_toolbar, text="文件列表（可直接拖拽文件夹或图片至下方）", font=("Segoe UI", 10, "bold")).pack(side="left")
 
         right_btns = ttk.Frame(list_toolbar)
         right_btns.pack(side="right")
@@ -163,15 +164,15 @@ class BatchRenameApp:
     def on_mode_change(self, event=None):
         mode = self.rename_mode.get()
         if mode == "重新命名":
-            self._prev_use_numbering = self.use_numbering.get()  # 记住当前状态
-            self.use_numbering.set(True)                         # 强制开启
-            self.numbering_check.configure(state="disabled")     # 禁用复选框
-        else:  # 保留原文件名
-            self.numbering_check.configure(state="normal")       # 恢复可用
-            self.use_numbering.set(self._prev_use_numbering)     # 恢复原状态
+            self._prev_use_numbering = self.use_numbering.get()
+            self.use_numbering.set(True)
+            self.numbering_check.configure(state="disabled")
+        else:
+            self.numbering_check.configure(state="normal")
+            self.use_numbering.set(self._prev_use_numbering)
         self.preview_rename()
 
-    # ---------- 其余方法保持不变 ----------
+    # ---------- 文件操作 ----------
     def on_setting_change(self):
         self.preview_rename()
 
@@ -185,10 +186,14 @@ class BatchRenameApp:
                         if f not in self.files:
                             self.files.append(f)
                             added += 1
+                        else:
+                            self.log(f"跳过重复：{f.name}")
             elif path.is_file() and path.suffix.lower() in (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"):
                 if path not in self.files:
                     self.files.append(path)
                     added += 1
+                else:
+                    self.log(f"跳过重复：{path.name}")
         self.refresh_tree()
         self.log(f"已添加 {added} 个文件")
 
@@ -206,14 +211,10 @@ class BatchRenameApp:
             self._add_paths(paths)
 
     def on_drop(self, event):
+        """修复拖放路径解析问题，使用 splitlist 正确处理空格和特殊字符"""
         if not DRAG_DROP_SUPPORT:
             return
-        raw = event.data
-        paths = []
-        for item in raw.split():
-            item = item.strip('{}')
-            if os.path.exists(item):
-                paths.append(item)
+        paths = self.root.tk.splitlist(event.data)
         self._add_paths(paths)
 
     def refresh_tree(self):
@@ -253,7 +254,7 @@ class BatchRenameApp:
         start_num = self.start_num_var.get() if use_n else 0
         mode = self.rename_mode.get()
 
-        # 重新命名模式下保险：即使通过其他途径关闭了编号，此处仍强制按编号处理
+        # 重新命名模式下强制编号
         if mode == "重新命名" and not use_n:
             use_n = True
             self.use_numbering.set(True)
